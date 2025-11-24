@@ -7,7 +7,7 @@ This repository contains an exploratory data analysis of my Goodreads data, impl
 <!-- - **Statistical analysis**: Multiple Correspondence Analysis (MCA) of book tags.
 - **Recommendation tool**:  predictive model suggests the next book to read from my to-be-read list based on my expected rating. -->
 
-## Technologies
+## Tools
 
 - R (`dplyr`, `ggplot2`, `igraph`)  
 - SPARQL and JSON for data querying  
