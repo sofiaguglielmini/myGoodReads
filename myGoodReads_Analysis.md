@@ -1,19 +1,14 @@
----
-title: "Exploratory analysis of my Goodreads data"
-output: github_document
+Exploratory analysis of my Goodreads data
+================
 
----
-
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE, fig.width = 12, fig.height = 6, fig.align='center')
-```
-
-Some exploratory analyses and data visualization of my Goodreads data, with additional information scraped from Wikidata and Open Library.
+Some exploratory analyses and data visualization of my Goodreads data,
+with additional information scraped from Wikidata and Open Library.
 
 ## Data preprocessing
 
 Load necessary libraries:
-```{r, message=FALSE, warning=FALSE}
+
+``` r
 library(dplyr)
 library(stringr)
 library(lubridate)
@@ -30,50 +25,49 @@ library(ggraph)
 library(scales)
 ```
 
-I exported my Goodreads data as a CSV file (My Books -> Tools -> Import and export). Read the data:
+I exported my Goodreads data as a CSV file (My Books -\> Tools -\>
+Import and export). Read the data:
 
-```{r, echo=TRUE}
+``` r
 data <- read.csv("goodreads_library_export.csv")
 ```
-```{r, echo=FALSE}
-# Table with description of variables
-data_dict <- data.frame(
-  Variable = colnames(data),
-  Description = c("Goodreads book ID",
-                  "Book title",
-                  "Book author",
-                  "Book author (last name, first name)",
-                  "Additional authors",
-                  "ISBN number",
-                  "ISBN-13 number",
-                  "My rating (1-5 stars)",
-                  "Average rating by all Goodreads users",
-                  "Publisher",
-                  "Binding (hardcover, paperback, etc.)",
-                  "Number of pages",
-                  "Year of publication of the edition I read",
-                  "Original publication year",
-                  "Date read",
-                  "Date added to my Goodreads library",
-                  "What custom book shelves I have assigned the book to",
-                  "Position in the bookshelf",
-                  "Read, to-read, currently-reading",
-                  "My review of the book",
-                  "Spoilers in the review (TRUE/FALSE)",
-                  "Private notes about the book",
-                  "Times read",
-                  "Number of copies I own")
-)
-data_dict$Variable <- paste0("`", data_dict$Variable, "`")
-knitr::kable(data_dict)
-```
 
-Preliminary data cleaning, removing some outliers and fixing some formatting issues:
-```{r, echo=TRUE, eval=FALSE}
+| Variable | Description |
+|:---|:---|
+| `Book.Id` | Goodreads book ID |
+| `Title` | Book title |
+| `Author` | Book author |
+| `Author.l.f` | Book author (last name, first name) |
+| `Additional.Authors` | Additional authors |
+| `ISBN` | ISBN number |
+| `ISBN13` | ISBN-13 number |
+| `My.Rating` | My rating (1-5 stars) |
+| `Average.Rating` | Average rating by all Goodreads users |
+| `Publisher` | Publisher |
+| `Binding` | Binding (hardcover, paperback, etc.) |
+| `Number.of.Pages` | Number of pages |
+| `Year.Published` | Year of publication of the edition I read |
+| `Original.Publication.Year` | Original publication year |
+| `Date.Read` | Date read |
+| `Date.Added` | Date added to my Goodreads library |
+| `Bookshelves` | What custom book shelves I have assigned the book to |
+| `Bookshelves.with.positions` | Position in the bookshelf |
+| `Exclusive.Shelf` | Read, to-read, currently-reading |
+| `My.Review` | My review of the book |
+| `Spoiler` | Spoilers in the review (TRUE/FALSE) |
+| `Private.Notes` | Private notes about the book |
+| `Read.Count` | Times read |
+| `Owned.Copies` | Number of copies I own |
+
+Preliminary data cleaning, removing some outliers and fixing some
+formatting issues:
+
+``` r
 glimpse(data)
 summary(data)
 ```
-```{r, echo=TRUE}
+
+``` r
 data <- data %>%
   mutate(
     Date.Added = as.Date(Date.Added),
@@ -88,15 +82,16 @@ data <- data %>%
 
 # I started recording in 2020
 data$Date.Read[data$Date.Read < as.Date("2020-01-01")] <- NA
-
 ```
 
 ### Querying additional data
 
 Query other databases for more information on the books.
 
-We can find Author nationality and gender by looking up each author name on Wikidata:
-```{r, echo=TRUE}
+We can find Author nationality and gender by looking up each author name
+on Wikidata:
+
+``` r
 get_author_info <- function(author) {
 
   # SPARQL query
@@ -121,8 +116,11 @@ get_author_info <- function(author) {
 }
 ```
 
-Scrape genre/subject tags from openlibrary.org. ISBN is not a reliable identifier on Open Library, so we use the title and author name to search:
-```{r, echo=TRUE}
+Scrape genre/subject tags from openlibrary.org. ISBN is not a reliable
+identifier on Open Library, so we use the title and author name to
+search:
+
+``` r
 get_book_info <- function(title, author) {
 
   # url of the search "Title Author" on openlibrary
@@ -152,9 +150,12 @@ get_book_info <- function(title, author) {
 }
 ```
 
-With the following code we can run the queries, format the result and save it to a file. It takes a few minutes to run, I already did it and saved the results, so this step can be skipped and the data can be read from the file directly.
+With the following code we can run the queries, format the result and
+save it to a file. It takes a few minutes to run, I already did it and
+saved the results, so this step can be skipped and the data can be read
+from the file directly.
 
-```{r, echo=TRUE, eval=FALSE}
+``` r
 author_data <- lapply(unique(data[,"Author"]), get_author_info)
 author_data <- do.call(rbind, author_data)
 colnames(author_data) <- c("Author", "AuthorGender", "AuthorNationality")
@@ -167,7 +168,8 @@ write.csv(book_data, "book_data")
 ```
 
 Read data from the files and join it to the original dataset:
-```{r, echo=TRUE}
+
+``` r
 author_data <- read.csv("author_data", stringsAsFactors = FALSE, row.names = 1)
 book_data <- read.csv("book_data", stringsAsFactors = FALSE, row.names = 1)
 mybooks <- data %>%
@@ -176,7 +178,8 @@ mybooks <- data %>%
 ```
 
 More data cleaning to only keep relevant columns and format:
-```{r, echo=TRUE}
+
+``` r
 mybooks <- mybooks %>% select(Title, Author, My.Rating, Average.Rating, Number.of.Pages, Original.Publication.Year, Date.Read, Exclusive.Shelf, Subjects, AuthorGender, AuthorNationality)
 mybooks <- mybooks %>%
   mutate(Season.Read = case_when(month(Date.Read) %in% c(12, 1, 2)  ~ "Winter",
@@ -197,37 +200,36 @@ mybooks <- mybooks %>%
                                   AuthorGender == "trans woman" ~ "female",
                                   TRUE ~ AuthorGender))
 ```
-```{r, echo=FALSE}
-# Table with description of variables
-data_dict2 <- data.frame(
-  Variable = colnames(mybooks),
-  Description = c("Book title",
-                  "Book author",
-                  "My rating (1-5 stars)",
-                  "Average rating by all Goodreads users",
-                  "Number of pages",
-                  "Original publication year",
-                  "Date read",
-                  "Read, to-read, currently-reading",
-                  "Tags/subjects from Open Library",
-                  "Author gender",
-                  "Author nationality",
-                  "Season read"))
-data_dict2$Variable <- paste0("`", data_dict2$Variable, "`")
-knitr::kable(data_dict2)
-```
 
-The goal now is to analyze the books I have read, so filter the dataset accordingly:
-```{r, echo=TRUE}
+| Variable                    | Description                           |
+|:----------------------------|:--------------------------------------|
+| `Title`                     | Book title                            |
+| `Author`                    | Book author                           |
+| `My.Rating`                 | My rating (1-5 stars)                 |
+| `Average.Rating`            | Average rating by all Goodreads users |
+| `Number.of.Pages`           | Number of pages                       |
+| `Original.Publication.Year` | Original publication year             |
+| `Date.Read`                 | Date read                             |
+| `Exclusive.Shelf`           | Read, to-read, currently-reading      |
+| `Subjects`                  | Tags/subjects from Open Library       |
+| `AuthorGender`              | Author gender                         |
+| `AuthorNationality`         | Author nationality                    |
+| `Season.Read`               | Season read                           |
+
+The goal now is to analyze the books I have read, so filter the dataset
+accordingly:
+
+``` r
 booksread <- mybooks %>% filter(Exclusive.Shelf == "read")
 bookstbr <- mybooks %>% filter(Exclusive.Shelf == "to-read")
 ```
 
 ## Exploratory Data Analysis
 
-This chapter includes data visualization and exploration. Set a custom ggplot2 theme for plots:
+This chapter includes data visualization and exploration. Set a custom
+ggplot2 theme for plots:
 
-```{r, echo=TRUE}
+``` r
 my_theme <- theme_bw() +
   theme(axis.title.x = element_text(vjust = 0, size = 14),
         axis.title.y = element_text(vjust = 2, size = 14),
@@ -240,12 +242,15 @@ theme_set(my_theme)
 
 ### Time trends
 
-How many books did I read per month? Many books I marked as read I did not put a date on (read before I started logging in Jan 2020), so only consider those with a date here.
+How many books did I read per month? Many books I marked as read I did
+not put a date on (read before I started logging in Jan 2020), so only
+consider those with a date here.
 
-The purple shaded areas correspond to the periods when I was writing my Bachelor and Master's theses - I did not have time to read much then.
-I read the most during the second wave of the Covid lockdowns.
+The purple shaded areas correspond to the periods when I was writing my
+Bachelor and Master’s theses - I did not have time to read much then. I
+read the most during the second wave of the Covid lockdowns.
 
-```{r, echo=TRUE}
+``` r
 ggplot(booksread %>% filter(!is.na(Date.Read)),
        aes(x = Date.Read)) +
   geom_histogram(binwidth = 100, fill = "turquoise3", color = "white") +
@@ -255,28 +260,32 @@ ggplot(booksread %>% filter(!is.na(Date.Read)),
   annotate("rect", xmin = as.Date("2022-01-01"), xmax = as.Date("2022-09-22"), ymin = -Inf, ymax = Inf, fill = "purple1", alpha = 0.15)
 ```
 
+<img src="myGoodReads_Analysis_files/figure-gfm/unnamed-chunk-14-1.png" style="display: block; margin: auto;" />
+
 I read more books in Autumn and Winter.
-```{r, echo=TRUE}
+
+``` r
 ggplot(booksread %>% filter(!is.na(Season.Read)), aes(x = Season.Read, fill = Season.Read)) +
   geom_bar() +
   labs(title = "Books by season read", x = "Season", y = "Number of books") +
   theme(legend.title = element_blank())
 ```
 
+<img src="myGoodReads_Analysis_files/figure-gfm/unnamed-chunk-15-1.png" style="display: block; margin: auto;" />
+
 ### Book characteristics
-```{r, echo=FALSE}
-avg_pages <- mean(booksread$Number.of.Pages[booksread$Number.of.Pages < 2000], na.rm = TRUE)
-prop_long <- sum(booksread$Number.of.Pages > 500 & booksread$Number.of.Pages < 2000, na.rm=T)/sum(!is.na(booksread$Number.of.Pages))
-prop_short <- sum(booksread$Number.of.Pages < 200, na.rm=T)/sum(!is.na(booksread$Number.of.Pages))
-cor_pages <- cor(booksread$Number.of.Pages, booksread$My.Rating, use = "complete.obs")
-```
 
-Considering the number of pages: `r round(prop_long*100, 2)`\% of books read are over 500 pages, while `r round(prop_short*100, 2)`\% are under 200 pages. The average length of the books I read is around `r round(avg_pages)` pages.
-There is a very weak positive correlation between number of pages and my rating (correlation coefficient = `r round(cor_pages, 3)`).
-The plot suggests that I tend to give slightly higher ratings to longer books, but the effect is very small. I also might rate them higher because if I don't like a very long book I won't finish it and therefore won't rate it at all.
-A linear model is fitted through the scatterplot; the confidence bands show the 95\% Gaussian confidence intervals.
+Considering the number of pages: 8.68% of books read are over 500 pages,
+while 27.85% are under 200 pages. The average length of the books I read
+is around 297 pages. There is a very weak positive correlation between
+number of pages and my rating (correlation coefficient = 0.078). The
+plot suggests that I tend to give slightly higher ratings to longer
+books, but the effect is very small. I also might rate them higher
+because if I don’t like a very long book I won’t finish it and therefore
+won’t rate it at all. A linear model is fitted through the scatterplot;
+the confidence bands show the 95% Gaussian confidence intervals.
 
-```{r, echo=TRUE}
+``` r
 books_per_npages <- booksread %>%
   filter(!is.na(Number.of.Pages) & Number.of.Pages < 2000) %>%
   group_by(Pages = (Number.of.Pages %/% 50)*50) %>%
@@ -291,7 +300,9 @@ ggplot(booksread %>%
   labs(title = "Books read by number of pages", x = "Pages", y = "Number of books")
 ```
 
-```{r, echo=TRUE, message=FALSE, warning=FALSE}
+<img src="myGoodReads_Analysis_files/figure-gfm/unnamed-chunk-17-1.png" style="display: block; margin: auto;" />
+
+``` r
 ggplot(booksread %>% filter(!is.na(Number.of.Pages) & Number.of.Pages < 2000),
        aes(x = Number.of.Pages, y = My.Rating)) +
   geom_jitter(width = 5, height = 0.2, alpha = 0.5, color = "lightsteelblue4", pch="\u2605", cex=5) +
@@ -300,21 +311,25 @@ ggplot(booksread %>% filter(!is.na(Number.of.Pages) & Number.of.Pages < 2000),
   labs(title = "Ratings by number of pages", x = "Number of pages", y = "Rating")
 ```
 
-```{r, echo=FALSE}
-cor_year <- cor(booksread$Original.Publication.Year, booksread$My.Rating, use = "complete.obs")
-```
+<img src="myGoodReads_Analysis_files/figure-gfm/unnamed-chunk-18-1.png" style="display: block; margin: auto;" />
 
-I read many books published in the last 20 years, but also a good number of classics from the 19th and early 20th century.
-There is no clear trend in my ratings by publication year (correlation coefficient = `r round(cor_year, 3)`).
-A linear model is fitted through the scatterplot; the confidence bands show the 95\% Gaussian confidence intervals.
+I read many books published in the last 20 years, but also a good number
+of classics from the 19th and early 20th century. There is no clear
+trend in my ratings by publication year (correlation coefficient =
+0.093). A linear model is fitted through the scatterplot; the confidence
+bands show the 95% Gaussian confidence intervals.
 
-```{r, echo=TRUE, message=FALSE, warning=FALSE}
+``` r
 ggplot(booksread %>% filter(!is.na(Original.Publication.Year) & Original.Publication.Year > 1750),
        aes(x = Original.Publication.Year)) +
   geom_histogram(binwidth = 10, fill = "sienna3", color="white") +
   scale_x_continuous(n.breaks = 10) +
   labs(title = "Books read by publication year", x = "Year", y = "Number of books")
+```
 
+<img src="myGoodReads_Analysis_files/figure-gfm/unnamed-chunk-20-1.png" style="display: block; margin: auto;" />
+
+``` r
 ggplot(booksread %>% filter(!is.na(Original.Publication.Year) & Original.Publication.Year > 1830), aes(x = Original.Publication.Year, y = My.Rating)) +
   geom_jitter(width = 0.5, height = 0.2, alpha = 0.5, color = "sienna3",  pch="\u2605", cex=5) +
   stat_smooth(color = "sienna4", fill = "wheat3", method="lm") +
@@ -322,11 +337,15 @@ ggplot(booksread %>% filter(!is.na(Original.Publication.Year) & Original.Publica
   labs(title = "Ratings by publication year", x = "Year", y = "Rating")
 ```
 
+<img src="myGoodReads_Analysis_files/figure-gfm/unnamed-chunk-20-2.png" style="display: block; margin: auto;" />
+
 ### Author characteristics
 
-I read mostly books by authors from the United States, the United Kingdom, Ireland and Italy, which matches the languages I speak more fluently.
+I read mostly books by authors from the United States, the United
+Kingdom, Ireland and Italy, which matches the languages I speak more
+fluently.
 
-```{r, echo=TRUE}
+``` r
 world <- ne_countries(scale = "medium", returnclass = "sf")
 country_counts <- booksread %>% filter(!is.na(AuthorNationality)) %>% count(AuthorNationality)
 world_counts <- world %>% left_join(country_counts, by = c("name" = "AuthorNationality")) %>% mutate(books_per_capita = (n / pop_est)*1000000)
@@ -339,38 +358,27 @@ ggplot(world_counts) +
   theme(legend.title = element_blank())
 ```
 
-```{r, echo=FALSE}
-n_gender <- sum(!is.na(booksread$AuthorGender))
-n_male <- sum(booksread$AuthorGender == "male", na.rm = TRUE)
-n_female <- sum(booksread$AuthorGender == "female", na.rm = TRUE)
-avg_rating <- booksread %>% filter(!is.na(AuthorGender) & !is.na(My.Rating)) %>%
-  group_by(AuthorGender) %>%
-  summarise(avg_rating = mean(My.Rating, na.rm = TRUE)) %>%
-  mutate(x = ifelse(AuthorGender == "male", -20, 20))  # x per gender for plotting average ratings
+<img src="myGoodReads_Analysis_files/figure-gfm/unnamed-chunk-21-1.png" style="display: block; margin: auto;" />
 
-# test for difference in means
-t_test <- t.test(My.Rating ~ AuthorGender, data = booksread %>% filter(!is.na(AuthorGender) & !is.na(My.Rating)))
+In the time period considered, I read 190 books with known author
+gender, of which 108 (56.8%) were written by male authors and 82 (43.2%)
+by female authors. Let’s investigate this a bit further. First of all,
+is this difference statistically significant? And how does the
+proportion of female authors I read compare to the overall publishing
+industry? According to a 2021 study, around 33% of commercially
+published books are written by women.
 
-# Compute confidence intervals
-ci_male <- epitools::binom.exact(n_male, n_gender)
-ci_female <- epitools::binom.exact(n_female, n_gender)
+The split in author gender in my books is not significantly different
+from equal, the 95% confidence interval includes 50% (barely). We can
+also see that I read a higher proportion of books by female authors
+(around 43.16%) compared to the overall publishing industry (33%). This
+higher proportion makes sense if we look at the books I rated higher. I
+gave average rating of 4.36 to books by female authors compared to 3.71
+for male authors. The difference in average ratings is significant
+(t-test p-value = 7.22^{-6}), I tend to rate books written by women
+higher.
 
-group <- c(rep("My authors", 2), rep("Population", 2))
-gender <- rep(c("Female", "Male"), 2)
-prop <- c(n_female/n_gender, n_male/n_gender, 0.33, 0.67)
-lower <- c(ci_female$lower, ci_male$lower, NA, NA)
-upper <- c(ci_female$upper, ci_male$upper, NA, NA)
-gender_props <- data.frame(group, gender, prop, lower, upper)
-gender_props$gender <- factor(gender_props$gender, levels = c("Male", "Female"))
-
-```
-
-In the time period considered, I read `r n_gender` books with known author gender, of which `r n_male` (`r round(n_male/n_gender*100,1)`\%) were written by male authors and `r n_female` (`r round(n_female/n_gender*100,1)`\%) by female authors. Let's investigate this a bit further. First of all, is this difference statistically significant? And how does the proportion of female authors I read compare to the overall publishing industry?
-According to a 2021 study\footnote{Samuels DJ, Teele DL. New Medium, Same Story? Gender Gaps in Book Publishing. PS: Political Science & Politics. 2021;54(1):131-140. https://doi.org/10.1017/S1049096520001018}, around 33\% of commercially published books are written by women.
-
-The split in author gender in my books is not significantly different from equal, the 95\% confidence interval includes 50\% (barely). We can also see that I read a higher proportion of books by female authors (around `r round(prop[1]*100,2)`\%) compared to the overall publishing industry (33\%). This higher proportion makes sense if we look at the books I rated higher. I gave average rating of `r round(avg_rating$avg_rating[which(avg_rating$AuthorGender=="female")],2)` to books by female authors compared to `r round(avg_rating$avg_rating[which(avg_rating$AuthorGender=="male")],2)` for male authors. The difference in average ratings is significant (t-test p-value = `r signif(t_test$p.value,3)`), I tend to rate books written by women higher.
-
-```{r, echo=TRUE}
+``` r
 ggplot(gender_props, aes(fill=gender, y=prop, x=group)) +
   geom_bar(position="stack", stat="identity") +
   geom_hline(yintercept = 0.5, linewidth = 0.5, linetype = 2, col = "gray") +
@@ -380,7 +388,11 @@ ggplot(gender_props, aes(fill=gender, y=prop, x=group)) +
   labs(title = "Books read by author gender", x = "", y = "Proportion of books") +
   theme(legend.title = element_blank()) +
   scale_fill_manual(values = c("cornflowerblue", "hotpink1"))
+```
 
+<img src="myGoodReads_Analysis_files/figure-gfm/unnamed-chunk-23-1.png" style="display: block; margin: auto;" />
+
+``` r
 ratings_gender <- booksread %>% filter(!is.na(AuthorGender) & !is.na(My.Rating)) %>%
   count(AuthorGender, My.Rating) %>%
   mutate(count2 = ifelse(AuthorGender == "male", -n, n),
@@ -408,9 +420,16 @@ ggplot(ratings_gender, aes(x = count2, y = My.Rating, fill = AuthorGender)) +
   theme(legend.title = element_blank())
 ```
 
-There is a moderate positive correlation between my ratings and the average ratings by other readers (correlation coefficient = `r round(cor(booksread$My.Rating, booksread$Average.Rating, use="complete.obs"),3)`), but I tend to rate books lower than average, with an average rating of `r round(mean(booksread$My.Rating, na.rm=TRUE),2)` compared to the Goodreads users' average rating of `r round(mean(booksread$Average.Rating, na.rm=TRUE),2)`.
-A quadratic polynomial is fitted through the scatterplot; the confidence bands show the 95\% Gaussian confidence intervals.
-```{r, echo=TRUE, message=FALSE, warning=FALSE}
+<img src="myGoodReads_Analysis_files/figure-gfm/unnamed-chunk-23-2.png" style="display: block; margin: auto;" />
+
+There is a moderate positive correlation between my ratings and the
+average ratings by other readers (correlation coefficient = 0.241), but
+I tend to rate books lower than average, with an average rating of 4.01
+compared to the Goodreads users’ average rating of 4.03. A quadratic
+polynomial is fitted through the scatterplot; the confidence bands show
+the 95% Gaussian confidence intervals.
+
+``` r
 ggplot(booksread %>% filter(!is.na(My.Rating) & !is.na(Average.Rating)),
        aes(x = Average.Rating, y = My.Rating)) +
   geom_jitter(width = 0.2, height = 0.2, alpha = 0.5, color = "purple1", pch="\u2605", cex=5) +
@@ -420,11 +439,19 @@ ggplot(booksread %>% filter(!is.na(My.Rating) & !is.na(Average.Rating)),
   labs(title = "My ratings vs. average ratings", x = "Average rating", y = "My rating")
 ```
 
+<img src="myGoodReads_Analysis_files/figure-gfm/unnamed-chunk-24-1.png" style="display: block; margin: auto;" />
+
 ### Book tags/subjects
 
-Finally, let's look at the tags/subjects of the books I read. First we need to clean and preprocess the tags. We do this on the entire dataset, then we again split it into read and to-be-read: for the analyses that follow, we keep working with the read books only (the training data).
-Some of the most repetitive work of merging tags can be done more quickly with the help of AI tools like Github Copilot - a lot more could be done here, but this is a good start:
-```{r, echo=TRUE}
+Finally, let’s look at the tags/subjects of the books I read. First we
+need to clean and preprocess the tags. We do this on the entire dataset,
+then we again split it into read and to-be-read: for the analyses that
+follow, we keep working with the read books only (the training data).
+Some of the most repetitive work of merging tags can be done more
+quickly with the help of AI tools like Github Copilot - a lot more could
+be done here, but this is a good start:
+
+``` r
 mybooks_tags <- mybooks %>%
   filter(!is.na(Subjects)) %>%
   separate_rows(Subjects, sep = "; ") %>%
@@ -470,7 +497,8 @@ books_tags_tbr <- mybooks_tags %>% filter(Exclusive.Shelf == "to-read")
 ```
 
 Visualize the most common tags:
-```{r, echo=TRUE, fig.height = 15, fig.width=10}
+
+``` r
 tags <- books_tags_read %>%
   group_by(SubjectList = Subjects) %>%
   summarise(Count = n()) %>%
@@ -482,8 +510,12 @@ ggplot(tags, aes(x = reorder(SubjectList, Count), y = Count)) +
   labs(title = "Most common tags", x = "Tag", y = "Occurrence in read books")
 ```
 
-We can also look at how tags co-occur in books, to see which topics are often read together, with a co-occurrence network:
-```{r, echo=TRUE, warning=FALSE}
+<img src="myGoodReads_Analysis_files/figure-gfm/unnamed-chunk-26-1.png" style="display: block; margin: auto;" />
+
+We can also look at how tags co-occur in books, to see which topics are
+often read together, with a co-occurrence network:
+
+``` r
 tags_cooccur <- books_tags_read %>%
   select(Title, Subjects) %>%
   mutate(Subjects = str_wrap(books_tags_read$Subjects, width = 15)) %>%
@@ -506,3 +538,5 @@ ggraph(tags_graph, layout = "kk") +
   theme(legend.position = "none",
         plot.title = element_text(hjust = 0.5, size = 20, face = "bold.italic"))
 ```
+
+<img src="myGoodReads_Analysis_files/figure-gfm/unnamed-chunk-27-1.png" style="display: block; margin: auto;" />
