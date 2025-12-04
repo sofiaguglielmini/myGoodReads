@@ -227,7 +227,7 @@ knitr::kable(data_dict2)
 The goal now is to analyze the books I have read, so filter the dataset accordingly. We keep 30\% of the read books as a validation set for later prediction.
 ```{r, echo=TRUE}
 # Set == testing is to-read, Set == training on 70% of read, Set == validation on 30% of read
-set.seed(1)
+set.seed(123)
 mybooks <- mybooks %>%
   mutate(Set = case_when(Exclusive.Shelf == "to-read" ~ "Test",
                          Exclusive.Shelf == "read" & runif(n()) <= 0.7 ~ "Train",
@@ -701,7 +701,7 @@ print(paste("Validation MSE (Random Forest):", round(mse_rf, 4)))
 # The elastic net is better
 ```
 
-The elastic net model performed slightly better on the validation set (MSE = `r round(mse_en,4)`) compared to the random forest (MSE = `r round(mse_rf,4)`). Therefore, we use the elastic net model to predict my ratings for the books in my to-be-read list.
+The elastic net model performed better on the validation set (MSE = `r round(mse_en,4)`) compared to the random forest (MSE = `r round(mse_rf,4)`). Therefore, we use the elastic net model to predict my ratings for the books in my to-be-read list.
 
 ```{r, echo=TRUE}
 
