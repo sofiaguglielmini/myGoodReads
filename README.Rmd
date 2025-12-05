@@ -227,7 +227,7 @@ knitr::kable(data_dict2)
 The goal now is to analyze the books I have read, so filter the dataset accordingly. We keep 30\% of the read books as a validation set for later prediction.
 ```{r, echo=TRUE}
 # Set == testing is to-read, Set == training on 70% of read, Set == validation on 30% of read
-set.seed(123)
+set.seed(1)
 mybooks <- mybooks %>%
   mutate(Set = case_when(Exclusive.Shelf == "to-read" ~ "Test",
                          Exclusive.Shelf == "read" & runif(n()) <= 0.7 ~ "Train",
@@ -647,13 +647,14 @@ testing <- testing %>%
          Original.Publication.Year = scale(Original.Publication.Year))
 
 # Identify predictor columns present in all sets
-predictor_cols <- intersect(colnames(training), colnames(validation))
+predictor_cols <- intersect(intersect(colnames(training), colnames(validation)), colnames(testing))
 
 # Remove response from predictors
 predictor_cols <- predictor_cols[!predictor_cols %in% c("My.Rating", "Set")]
 
 # Prepare the model matrix and the response in both sets
-x_train <- model.matrix(~ ., data = training[, predictor_cols])[,-1]
+x_train <- as.matrix(training[, predictor_cols])
+
 # we include the quadratic term for Average.Rating, as per our exploratory analysis
 x_train <- cbind(x_train, training$Average.Rating^2)
 colnames(x_train)[ncol(x_train)] <- "Average.Rating2"
@@ -661,28 +662,28 @@ y_train <- training$My.Rating
 xy_train <- as.data.frame(cbind(y_train, x_train))
 colnames(xy_train)[1] <- "My.Rating"
 
-x_val <- model.matrix(~ . - 1, data = validation[, predictor_cols])
+x_val <- as.matrix(validation[, predictor_cols])
 x_val <- cbind(x_val, validation$Average.Rating^2)
 colnames(x_val)[ncol(x_val)] <- "Average.Rating2"
 y_val <- validation$My.Rating
 xy_val <- as.data.frame(cbind(y_val, x_val))
 colnames(xy_val)[1] <- "My.Rating"
 
-x_test <- model.matrix(~ . - 1, data = testing[, predictor_cols])
+x_test <- as.matrix(testing[, predictor_cols])
 x_test <- cbind(x_test, testing$Average.Rating^2)
+colnames(x_test)[ncol(x_test)] <- "Average.Rating2"
 
 ```
 
 We fit two different models: an elastic net regression and a random forest. We compare their performance on the validation set using mean squared error (MSE). For further analysis (not displayed here) we could also try to predict whether I will like a book (rating >=4) or not (rating <4), or use a response with 5 levels and do ordinal regression.
 
-```{r, echo=TRUE}
+```{r, echo=TRUE, message=FALSE, warning=FALSE}
 # Model 1: Elastic net regression
 model_en <- cv.glmnet(x_train, y_train, alpha = 0.5, lambda.min.ratio = 1e-10, type.measure = "mse")
 best_lambda <- model_en$lambda.min
-plot(model_en)
+plot(model_en, main = "Elastic Net Cross-Validation")
 en_coef <- coef(model_en, s = best_lambda)
 selected_vars <- rownames(en_coef)[which(en_coef != 0)]
-selected_vars
 
 # Evaluate on validation set
 predictions_val <- predict(model_en, s = best_lambda, newx = x_val)
@@ -690,25 +691,34 @@ mse_en <- mean((y_val - predictions_val)^2)
 print(paste("Validation MSE (Elastic net):", round(mse_en, 4)))
 
 # Model 2: Random Forest
+# select mtry
+mtry_tuned <- tuneRF(x_train, y_train, stepFactor = 1.5, improve = 0.01, ntreeTry = 500)
+mtry_tuned_value <- mtry_tuned[which.min(mtry_tuned[, 2]), 1]
 model_rf <- randomForest(My.Rating ~ ., data = xy_train, 
-                         ntree = 500, mtry = 10, importance = TRUE)
+                         ntree = 500, nodesize=1, mtry=mtry_tuned_value, importance = TRUE)
+plot(model_rf, main="Random Forest out-of-bag Error")
 varImpPlot(model_rf, main = "Variable Importance (Random Forest)")
 
 # Evaluate on validation set
 predictions_val_rf <- predict(model_rf, newdata = xy_val)
 mse_rf <- mean((y_val - predictions_val_rf)^2)
 print(paste("Validation MSE (Random Forest):", round(mse_rf, 4)))
-# The elastic net is better
 ```
 
-The elastic net model performed better on the validation set (MSE = `r round(mse_en,4)`) compared to the random forest (MSE = `r round(mse_rf,4)`). Therefore, we use the elastic net model to predict my ratings for the books in my to-be-read list.
+The elastic net model, with the penalty parameter selected using cross-validation (the value of the parameter which minimizes the cross-validation MSE, as seen in the plot), selected the following variables as important predictors of my ratings: `r paste(selected_vars[-1], collapse = ", ")`.
+
+We set the number of trees in the random forest to 500 (the more trees, the better the performance, but also the longer the computation time). From the out-of-bag error plot we can see that this number of trees is more than sufficient for the error to stabilize.
+The `mtry` parameter indicates how many variables to consider at each split, we select its optimal value based on the out-of-bag error.
+
+The most important variables in the random forest model are shown in the variable importance plot. On the left panel, the variables are ranked based on how much removing them decreases the model accuracy and the right panel shows the increase in mean squared error when the variable is permuted. The most important predictors are `r paste(rownames(importance(model_rf))[order(importance(model_rf)[,1], decreasing=TRUE)[1:5]], collapse = ", ")`.
+
+The random forest model performed better on the validation set (MSE = `r round(mse_rf,4)`) compared to the elastic net (MSE = `r round(mse_en,4)`). Therefore, we will use the random forest model to predict my ratings for the books in the to-read list.
 
 ```{r, echo=TRUE}
 
-# Predict ratings for the to-read list with the elastic net model
-predictions_test <- predict(model_en, s = best_lambda, newx = x_test)
-predicted_ratings <- predictions_test  # back-transform  
-tbr_clean$Predicted.My.Rating <- as.numeric(predicted_ratings)
+# Predict ratings for the to-read list with the random forest model
+predictions_test <- predict(model_rf, newdata = as.data.frame(x_test))
+tbr_clean$Predicted.My.Rating <- as.numeric(predictions_test)
 tbr_clean <- tbr_clean %>%
   arrange(desc(Predicted.My.Rating)) %>%
   select(Title, Author, Predicted.My.Rating)

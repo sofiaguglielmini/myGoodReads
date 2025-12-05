@@ -687,13 +687,14 @@ testing <- testing %>%
          Original.Publication.Year = scale(Original.Publication.Year))
 
 # Identify predictor columns present in all sets
-predictor_cols <- intersect(colnames(training), colnames(validation))
+predictor_cols <- intersect(intersect(colnames(training), colnames(validation)), colnames(testing))
 
 # Remove response from predictors
 predictor_cols <- predictor_cols[!predictor_cols %in% c("My.Rating", "Set")]
 
 # Prepare the model matrix and the response in both sets
-x_train <- model.matrix(~ ., data = training[, predictor_cols])[,-1]
+x_train <- as.matrix(training[, predictor_cols])
+
 # we include the quadratic term for Average.Rating, as per our exploratory analysis
 x_train <- cbind(x_train, training$Average.Rating^2)
 colnames(x_train)[ncol(x_train)] <- "Average.Rating2"
@@ -701,15 +702,16 @@ y_train <- training$My.Rating
 xy_train <- as.data.frame(cbind(y_train, x_train))
 colnames(xy_train)[1] <- "My.Rating"
 
-x_val <- model.matrix(~ . - 1, data = validation[, predictor_cols])
+x_val <- as.matrix(validation[, predictor_cols])
 x_val <- cbind(x_val, validation$Average.Rating^2)
 colnames(x_val)[ncol(x_val)] <- "Average.Rating2"
 y_val <- validation$My.Rating
 xy_val <- as.data.frame(cbind(y_val, x_val))
 colnames(xy_val)[1] <- "My.Rating"
 
-x_test <- model.matrix(~ . - 1, data = testing[, predictor_cols])
+x_test <- as.matrix(testing[, predictor_cols])
 x_test <- cbind(x_test, testing$Average.Rating^2)
+colnames(x_test)[ncol(x_test)] <- "Average.Rating2"
 ```
 
 We fit two different models: an elastic net regression and a random
@@ -722,7 +724,7 @@ also try to predict whether I will like a book (rating \>=4) or not
 # Model 1: Elastic net regression
 model_en <- cv.glmnet(x_train, y_train, alpha = 0.5, lambda.min.ratio = 1e-10, type.measure = "mse")
 best_lambda <- model_en$lambda.min
-plot(model_en)
+plot(model_en, main = "Elastic Net Cross-Validation")
 ```
 
 <img src="README_files/figure-gfm/unnamed-chunk-29-1.png" style="display: block; margin: auto;" />
@@ -730,12 +732,7 @@ plot(model_en)
 ``` r
 en_coef <- coef(model_en, s = best_lambda)
 selected_vars <- rownames(en_coef)[which(en_coef != 0)]
-selected_vars
-```
 
-    ## [1] "(Intercept)"     "FemaleAuthor"    "conduct_of_life" "Average.Rating2"
-
-``` r
 # Evaluate on validation set
 predictions_val <- predict(model_en, s = best_lambda, newx = x_val)
 mse_en <- mean((y_val - predictions_val)^2)
@@ -746,18 +743,36 @@ print(paste("Validation MSE (Elastic net):", round(mse_en, 4)))
 
 ``` r
 # Model 2: Random Forest
-model_rf <- randomForest(My.Rating ~ ., data = xy_train, 
-                         ntree = 500, mtry = 10, importance = TRUE)
+# select mtry
+mtry_tuned <- tuneRF(x_train, y_train, stepFactor = 1.5, improve = 0.01, ntreeTry = 500)
 ```
 
-    ## Warning in randomForest.default(m, y, ...): The response has five or fewer
-    ## unique values.  Are you sure you want to do regression?
+    ## mtry = 37  OOB error = 1.067807 
+    ## Searching left ...
+
+    ## mtry = 25    OOB error = 1.069502 
+    ## -0.001587594 0.01 
+    ## Searching right ...
+
+    ## mtry = 55    OOB error = 1.102166 
+    ## -0.03217719 0.01
+
+<img src="README_files/figure-gfm/unnamed-chunk-29-2.png" style="display: block; margin: auto;" />
+
+``` r
+mtry_tuned_value <- mtry_tuned[which.min(mtry_tuned[, 2]), 1]
+model_rf <- randomForest(My.Rating ~ ., data = xy_train, 
+                         ntree = 500, nodesize=1, mtry=mtry_tuned_value, importance = TRUE)
+plot(model_rf, main="Random Forest out-of-bag Error")
+```
+
+<img src="README_files/figure-gfm/unnamed-chunk-29-3.png" style="display: block; margin: auto;" />
 
 ``` r
 varImpPlot(model_rf, main = "Variable Importance (Random Forest)")
 ```
 
-<img src="README_files/figure-gfm/unnamed-chunk-29-2.png" style="display: block; margin: auto;" />
+<img src="README_files/figure-gfm/unnamed-chunk-29-4.png" style="display: block; margin: auto;" />
 
 ``` r
 # Evaluate on validation set
@@ -766,22 +781,37 @@ mse_rf <- mean((y_val - predictions_val_rf)^2)
 print(paste("Validation MSE (Random Forest):", round(mse_rf, 4)))
 ```
 
-    ## [1] "Validation MSE (Random Forest): 0.583"
+    ## [1] "Validation MSE (Random Forest): 0.6293"
+
+The elastic net model, with the penalty parameter selected using
+cross-validation (the value of the parameter which minimizes the
+cross-validation MSE, as seen in the plot), selected the following
+variables as important predictors of my ratings: FemaleAuthor,
+conduct_of_life, Average.Rating2.
+
+We set the number of trees in the random forest to 500 (the more trees,
+the better the performance, but also the longer the computation time).
+From the out-of-bag error plot we can see that this number of trees is
+more than sufficient for the error to stabilize. The `mtry` parameter
+indicates how many variables to consider at each split, we select its
+optimal value based on the out-of-bag error.
+
+The most important variables in the random forest model are shown in the
+variable importance plot. On the left panel, the variables are ranked
+based on how much removing them decreases the model accuracy and the
+right panel shows the increase in mean squared error when the variable
+is permuted. The most important predictors are FemaleAuthor, nonfiction,
+drama, girls, family.
+
+The random forest model performed better on the validation set (MSE =
+0.6293) compared to the elastic net (MSE = 0.4912). Therefore, we will
+use the random forest model to predict my ratings for the books in the
+to-read list.
 
 ``` r
-# The elastic net is better
-```
-
-The elastic net model performed slightly better on the validation set
-(MSE = 0.4912) compared to the random forest (MSE = 0.583). Therefore,
-we use the elastic net model to predict my ratings for the books in my
-to-be-read list.
-
-``` r
-# Predict ratings for the to-read list with the elastic net model
-predictions_test <- predict(model_en, s = best_lambda, newx = x_test)
-predicted_ratings <- predictions_test  # back-transform  
-tbr_clean$Predicted.My.Rating <- as.numeric(predicted_ratings)
+# Predict ratings for the to-read list with the random forest model
+predictions_test <- predict(model_rf, newdata = as.data.frame(x_test))
+tbr_clean$Predicted.My.Rating <- as.numeric(predictions_test)
 tbr_clean <- tbr_clean %>%
   arrange(desc(Predicted.My.Rating)) %>%
   select(Title, Author, Predicted.My.Rating)
@@ -793,13 +823,13 @@ knitr::kable(top10_recommendations, col.names = c("Title", "Author", "Predicted 
 
 | Title | Author | Predicted My Rating |
 |:---|:---|---:|
-| Counting the Cost | Jill Duggar | 4.1 |
-| Charity and Sylvia: A Same-Sex Marriage in Early America | Rachel Hope Cleves | 4.1 |
-| The Joy Luck Club | Amy Tan | 4.1 |
-| The Children’s Hour | Lillian Hellman | 4.1 |
-| The Artist’s Way: A Spiritual Path to Higher Creativity | Julia Cameron | 4.1 |
-| The Goldfinch | Donna Tartt | 4.1 |
-| Wild: From Lost to Found on the Pacific Crest Trail | Cheryl Strayed | 4.1 |
-| Daughter of Fortune | Isabel Allende | 4.1 |
-| Quiet: The Power of Introverts in a World That Can’t Stop Talking | Susan Cain | 4.1 |
-| The Corner That Held Them | Sylvia Townsend Warner | 4.1 |
+| The Joy Luck Club | Amy Tan | 4.59 |
+| Wild: From Lost to Found on the Pacific Crest Trail | Cheryl Strayed | 4.56 |
+| The Artist’s Way: A Spiritual Path to Higher Creativity | Julia Cameron | 4.55 |
+| The Secret Magdalene | Ki Longfellow | 4.54 |
+| The Capital Order: How Economists Invented Austerity and Paved the Way to Fascism | Clara E. Mattei | 4.52 |
+| Counting the Cost | Jill Duggar | 4.51 |
+| The House of the Spirits | Isabel Allende | 4.51 |
+| I Know Why the Caged Bird Sings | Maya Angelou | 4.50 |
+| Quiet: The Power of Introverts in a World That Can’t Stop Talking | Susan Cain | 4.49 |
+| Ladyparts | Deborah Copaken | 4.49 |
